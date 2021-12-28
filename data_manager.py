@@ -1,4 +1,5 @@
 import os
+import re
 import cv2
 import numpy as np
 
@@ -10,6 +11,11 @@ def load_img(path, grayscale=False, target_size=None):
     if target_size:
         img = cv2.resize(img, target_size)
     return img
+
+
+def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
+    return [os.path.join(directory, f) for f in os.listdir(directory)
+            if os.path.isfile(os.path.join(directory, f)) and re.match('([\w]+\.(?:' + ext + '))', f)]
 
 class DataManager(object):
     DATA_PATH = './data/'
@@ -36,6 +42,8 @@ class DataManager(object):
         
         return (amateur_patient_classes, amateur_imgs, amateur_imgs_mask), (expert_patient_classes, expert_imgs, expert_imgs_mask)
 
+    #@staticmethod
+    
     @staticmethod
     def _read_train_images(path, is_expert=False):
         """
