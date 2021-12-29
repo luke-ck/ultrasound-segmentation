@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-def add_conv_stage(dim_in, dim_out, kernel_size=3, strides=1, padding='same', use_bias=False, use_BN=False):
+def add_conv_stage(dim_out, kernel_size=3, strides=1, padding='same', use_bias=False, use_BN=False):
     if  use_BN:
         return tf.keras.Sequential([
             tf.keras.layers.Conv2D(filters=dim_out, kernel_size=kernel_size, strides=strides, padding=padding, use_bias=use_bias),
@@ -21,7 +21,7 @@ def add_conv_stage(dim_in, dim_out, kernel_size=3, strides=1, padding='same', us
 def add_merge_stage(ch_coarse, ch_fine, in_coarse, in_fine, upsample):
     conv = tf.keras.layers.Conv2DTranspose(filters=ch_fine, kernel_size=4, strides=2, padding='same', output_padding=1)
     
-def upsample(ch_coarse, ch_fine):
+def upsample(ch_fine):
     return tf.keras.Sequential([
         tf.keras.layers.Conv2DTranspose(filters=ch_fine, kernel_size=4, strides=2, padding='same', use_bias=False),
         tf.keras.layers.ReLU()
@@ -31,25 +31,25 @@ class UNet(tf.keras.models.Model):
     def __init__(self, use_BN):
         super().__init__()
         
-        self.conv1   = add_conv_stage(1, 32, use_BN=use_BN)
-        self.conv2   = add_conv_stage(32, 64, use_BN=use_BN)
-        self.conv3   = add_conv_stage(64, 128, use_BN=use_BN)
-        self.conv4   = add_conv_stage(128, 256, use_BN=use_BN)
-        self.conv5   = add_conv_stage(256, 512, use_BN=use_BN)
+        self.conv1 = add_conv_stage(32, use_BN=use_BN)
+        self.conv2 = add_conv_stage(64, use_BN=use_BN)
+        self.conv3 = add_conv_stage(128, use_BN=use_BN)
+        self.conv4 = add_conv_stage(256, use_BN=use_BN)
+        self.conv5 = add_conv_stage(512, use_BN=use_BN)
 
-        self.conv4m = add_conv_stage(512, 256, use_BN=use_BN)
-        self.conv3m = add_conv_stage(256, 128, use_BN=use_BN)
-        self.conv2m = add_conv_stage(128,  64, use_BN=use_BN)
-        self.conv1m = add_conv_stage( 64,  32, use_BN=use_BN)
+        self.conv4m = add_conv_stage(256, use_BN=use_BN)
+        self.conv3m = add_conv_stage(128, use_BN=use_BN)
+        self.conv2m = add_conv_stage(64, use_BN=use_BN)
+        self.conv1m = add_conv_stage(32, use_BN=use_BN)
         
         self.conv0 = tf.keras.layers.Conv2D(1, 3, 1, padding='same')
         
         self.max_pool = tf.keras.layers.MaxPool2D()
         
-        self.upsample54 = upsample(512, 256)
-        self.upsample43 = upsample(256, 128)
-        self.upsample32 = upsample(128,  64)
-        self.upsample21 = upsample(64 ,  32)
+        self.upsample54 = upsample(256)
+        self.upsample43 = upsample(128)
+        self.upsample32 = upsample(64)
+        self.upsample21 = upsample(32)
 
     def call(self, x, **kwargs):
         conv1_out = self.conv1(x)
@@ -74,4 +74,3 @@ class UNet(tf.keras.models.Model):
         conv0_out = self.conv0(conv1m_out)
 
         return tf.keras.activations.sigmoid(conv0_out)
-    
