@@ -24,8 +24,8 @@ class DataManager(object):
     AM_IMG_ORIG_COLS = 112     # Width
 
     # padding target size for expert dataset
-    EX_IMG_TARGET_ROWS = 224 
-    EX_IMG_TARGET_COLS = 224
+    EX_IMG_TARGET_ROWS = 720
+    EX_IMG_TARGET_COLS = 960
 
     @staticmethod
     def read_train_images():
