@@ -1,5 +1,6 @@
-import os
+from sklearn.model_selection import train_test_split
 import re
+import os
 import cv2
 import numpy as np
 
@@ -12,10 +13,10 @@ def load_img(path, grayscale=False, target_size=None):
         img = cv2.resize(img, target_size)
     return img
 
-
 def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
     return [os.path.join(directory, f) for f in os.listdir(directory)
             if os.path.isfile(os.path.join(directory, f)) and re.match('([\w]+\.(?:' + ext + '))', f)]
+
 
 class DataManager(object):
     DATA_PATH = './data/'
@@ -24,8 +25,11 @@ class DataManager(object):
     AM_IMG_ORIG_COLS = 112     # Width
 
     # padding target size for expert dataset
-    EX_IMG_TARGET_ROWS = 720
-    EX_IMG_TARGET_COLS = 960
+    EX_ORIG_TARGET_ROWS = 720 
+    EX_ORIG_TARGET_COLS = 960
+
+    EX_IMG_TARGET_ROWS = 224
+    EX_IMG_TARGET_COLS = 224
 
     @staticmethod
     def read_train_images():
@@ -42,8 +46,6 @@ class DataManager(object):
         
         return (amateur_patient_classes, amateur_imgs, amateur_imgs_mask), (expert_patient_classes, expert_imgs, expert_imgs_mask)
 
-    #@staticmethod
-    
     @staticmethod
     def _read_train_images(path, is_expert=False):
         """
@@ -57,8 +59,8 @@ class DataManager(object):
         im_w = DataManager.AM_IMG_ORIG_COLS
         
         if is_expert:
-            im_h = DataManager.EX_IMG_TARGET_ROWS
-            im_w = DataManager.EX_IMG_TARGET_COLS
+            im_h = DataManager.EX_ORIG_TARGET_ROWS
+            im_w = DataManager.EX_ORIG_TARGET_ROWS
             
         imgs = np.ndarray((total, im_h, im_w), dtype=np.uint8)
         imgs_mask = np.ndarray((total, im_h, im_w), dtype=np.uint8)
@@ -109,8 +111,8 @@ class DataManager(object):
         train_data_path = os.path.join(DataManager.DATA_PATH, 'test')
         images = os.listdir(train_data_path)
         total = len(images)
-        im_h = DataManager.EX_IMG_TARGET_ROWS # I guess we use only the expert recordings for now....
-        im_w = DataManager.EX_IMG_TARGET_COLS
+        im_h = DataManager.EX_ORIG_TARGET_ROWS
+        im_w = DataManager.EX_ORIG_TARGET_ROWS
         imgs = np.ndarray((total, 1, im_h, im_w), dtype=np.uint8)
         imgs_id = list()
 
