@@ -4,13 +4,14 @@ import os
 import cv2
 import numpy as np
 
+
 def load_img(path, grayscale=False, target_size=None):
     if grayscale:
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     else:
         img = cv2.imread(path)
     if target_size:
-        img = cv2.resize(img, target_size)
+        img = cv2.resize(img, target_size).T
     return img
 
 def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
@@ -19,6 +20,7 @@ def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
 
 
 class DataManager(object):
+    
     DATA_PATH = './data/'
 
     AM_IMG_ORIG_ROWS = 112     # Height
@@ -60,7 +62,7 @@ class DataManager(object):
         
         if is_expert:
             im_h = DataManager.EX_ORIG_TARGET_ROWS
-            im_w = DataManager.EX_ORIG_TARGET_ROWS
+            im_w = DataManager.EX_ORIG_TARGET_COLS
             
         imgs = np.ndarray((total, im_h, im_w), dtype=np.uint8)
         imgs_mask = np.ndarray((total, im_h, im_w), dtype=np.uint8)
@@ -79,7 +81,7 @@ class DataManager(object):
                 target_size = (im_h, im_w) # padding
             else:
                 target_size = None
-                
+
             imgs[i] = load_img(os.path.join(path, image_name), 
                                grayscale=True, 
                                target_size=target_size)
@@ -112,7 +114,7 @@ class DataManager(object):
         images = os.listdir(train_data_path)
         total = len(images)
         im_h = DataManager.EX_ORIG_TARGET_ROWS
-        im_w = DataManager.EX_ORIG_TARGET_ROWS
+        im_w = DataManager.EX_ORIG_TARGET_COLS
         imgs = np.ndarray((total, 1, im_h, im_w), dtype=np.uint8)
         imgs_id = list()
 
@@ -140,7 +142,7 @@ class DataManager(object):
 
     @staticmethod
     def save_train_val_split(X, y, name_prefix, stratify=None, split_ratio=0.1):
-        X_train, X_val, y_train, y_val = train_test_split(X, y, stratify=stratify, test_size=split_ratio)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=1, stratify=stratify, test_size=split_ratio)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_train.npy'.format(name_prefix)), X_train)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_val.npy'.format(name_prefix)), X_val)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_y_train.npy'.format(name_prefix)), y_train)
