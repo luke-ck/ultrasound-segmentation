@@ -30,8 +30,8 @@ class CustomDataGenerator(Iterator):
                 y_has_mask[i] = 1
 
         outputs = {
-            'aux_output': y_has_mask,
-            'main_output': batch_y
+            'output_2': y_has_mask,
+            'output_1': batch_y
         }
 
         return batch_x, outputs
