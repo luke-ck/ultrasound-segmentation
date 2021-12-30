@@ -37,6 +37,9 @@ class UNet(tf.keras.models.Model):
         self.conv4 = add_conv_stage(256, use_BN=use_BN)
         self.conv5 = add_conv_stage(512, use_BN=use_BN)
 
+        #self.aux = 
+        self.aux_flatten = tf.keras.layers.Flatten(name='aux_output')
+
         self.conv4m = add_conv_stage(256, use_BN=use_BN)
         self.conv3m = add_conv_stage(128, use_BN=use_BN)
         self.conv2m = add_conv_stage(64, use_BN=use_BN)
@@ -59,6 +62,10 @@ class UNet(tf.keras.models.Model):
         conv4_out = self.conv4(self.max_pool(conv3_out))
         conv5_out = self.conv5(self.max_pool(conv4_out))
 
+        aux = tf.keras.layers.Conv2D(filters=1, kernel_size=[conv5_out.shape[1], conv5_out.shape[2]],
+                        strides=1, kernel_initializer="he_normal", activation='sigmoid')(conv5_out)
+        aux = self.aux_flatten(aux)
+
         conv5m_out = tf.concat([self.upsample54(conv5_out), conv4_out], -1)
         conv4m_out = self.conv4m(conv5m_out)
 
@@ -73,4 +80,4 @@ class UNet(tf.keras.models.Model):
 
         conv0_out = self.conv0(conv1m_out)
 
-        return tf.keras.activations.sigmoid(conv0_out)
+        return tf.keras.activations.sigmoid(conv0_out), aux
