@@ -1,9 +1,8 @@
-from sklearn.model_selection import train_test_split
 import re
 import os
 import cv2
 import numpy as np
-
+from sklearn.model_selection import train_test_split
 
 def load_img(path, grayscale=False, target_size=None):
     if grayscale:
@@ -11,7 +10,26 @@ def load_img(path, grayscale=False, target_size=None):
     else:
         img = cv2.imread(path)
     if target_size:
-        img = cv2.resize(img, target_size).T
+        #img = cv2.resize(img, target_size).T
+        h, w = img.shape[:2]
+        c = None if len(img.shape) < 3 else img.shape[2]
+        if h == w: 
+            img = cv2.resize(img, target_size, interpolation)
+        if h > w: 
+            dif = h
+        else:     
+            dif = w
+        x_pos = int((dif - w)/2.)
+        y_pos = int((dif - h)/2.)
+        if c is None:
+            mask = np.zeros((dif, dif), dtype=img.dtype)
+            mask[y_pos:y_pos+h, x_pos:x_pos+w] = img[:h, :w]
+        else:
+            mask = np.zeros((dif, dif, c), dtype=img.dtype)
+            mask[y_pos:y_pos+h, x_pos:x_pos+w, :] = img[:h, :w, :]
+        img = cv2.resize(mask, target_size, cv2.INTER_AREA).T
+        
+    img = np.expand_dims(img, axis=-1)
     return img
 
 def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
@@ -20,15 +38,14 @@ def list_images(directory, ext='jpg|jpeg|bmp|png|tif'):
 
 
 class DataManager(object):
-    
     DATA_PATH = './data/'
 
     AM_IMG_ORIG_ROWS = 112     # Height
     AM_IMG_ORIG_COLS = 112     # Width
 
     # padding target size for expert dataset
-    EX_ORIG_TARGET_ROWS = 720 
-    EX_ORIG_TARGET_COLS = 960
+    EX_ORIG_TARGET_ROWS = 1007
+    EX_ORIG_TARGET_COLS = 732
 
     EX_IMG_TARGET_ROWS = 224
     EX_IMG_TARGET_COLS = 224
@@ -64,8 +81,8 @@ class DataManager(object):
             im_h = DataManager.EX_ORIG_TARGET_ROWS
             im_w = DataManager.EX_ORIG_TARGET_COLS
             
-        imgs = np.ndarray((total, im_h, im_w), dtype=np.uint8)
-        imgs_mask = np.ndarray((total, im_h, im_w), dtype=np.uint8)
+        imgs = np.ndarray((total, im_h, im_w, 1), dtype=np.uint8)
+        imgs_mask = np.ndarray((total, im_h, im_w, 1), dtype=np.uint8)
         
         i = 0
         for image_path in images:
@@ -81,7 +98,7 @@ class DataManager(object):
                 target_size = (im_h, im_w) # padding
             else:
                 target_size = None
-
+                
             imgs[i] = load_img(os.path.join(path, image_name), 
                                grayscale=True, 
                                target_size=target_size)
@@ -142,7 +159,7 @@ class DataManager(object):
 
     @staticmethod
     def save_train_val_split(X, y, name_prefix, stratify=None, split_ratio=0.1):
-        X_train, X_val, y_train, y_val = train_test_split(X, y, random_state=1, stratify=stratify, test_size=split_ratio)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, stratify=stratify, test_size=split_ratio)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_train.npy'.format(name_prefix)), X_train)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_val.npy'.format(name_prefix)), X_val)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_y_train.npy'.format(name_prefix)), y_train)
