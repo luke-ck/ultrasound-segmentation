@@ -132,7 +132,7 @@ class DataManager(object):
         total = len(images)
         im_h = DataManager.EX_ORIG_TARGET_ROWS
         im_w = DataManager.EX_ORIG_TARGET_COLS
-        imgs = np.ndarray((total, 1, im_h, im_w), dtype=np.uint8)
+        imgs = np.ndarray((total, im_h, im_w, 1), dtype=np.uint8)
         imgs_id = list()
 
         print('Creating test images...')
@@ -158,8 +158,8 @@ class DataManager(object):
         print('Saving to .npy files done.')
 
     @staticmethod
-    def save_train_val_split(X, y, name_prefix, stratify=None, split_ratio=0.1):
-        X_train, X_val, y_train, y_val = train_test_split(X, y, stratify=stratify, test_size=split_ratio)
+    def save_train_val_split(X, y, name_prefix, stratify=None, split_ratio=0.2):
+        X_train, X_val, y_train, y_val = train_test_split(X, y, stratify=stratify, test_size=split_ratio, random_state=42)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_train.npy'.format(name_prefix)), X_train)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_X_val.npy'.format(name_prefix)), X_val)
         np.save(os.path.join(DataManager.DATA_PATH, '{}_y_train.npy'.format(name_prefix)), y_train)

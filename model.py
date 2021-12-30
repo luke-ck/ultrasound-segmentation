@@ -54,29 +54,39 @@ class UNet(tf.keras.models.Model):
         self.upsample43 = upsample(128)
         self.upsample32 = upsample(64)
         self.upsample21 = upsample(32)
-
+            
+        self.dropout = tf.keras.layers.Dropout(rate=0.1)
+        
     def call(self, x, **kwargs):
         conv1_out = self.conv1(x)
         #return self.upsample21(conv1_out)
         conv2_out = self.conv2(self.max_pool(conv1_out))
+        conv2_out = self.dropout(conv2_out)
         conv3_out = self.conv3(self.max_pool(conv2_out))
+        conv3_out = self.dropout(conv3_out)
         conv4_out = self.conv4(self.max_pool(conv3_out))
+        conv4_out = self.dropout(conv4_out)
         conv5_out = self.conv5(self.max_pool(conv4_out))
+        conv5_out = self.dropout(conv5_out)
         
         aux = self.aux(conv5_out)
         aux = self.aux_flatten(aux)
 
         conv5m_out = tf.concat([self.upsample54(conv5_out), conv4_out], -1)
         conv4m_out = self.conv4m(conv5m_out)
-
+        conv4m_out = self.dropout(conv4m_out)
+        
         conv4m_out_ = tf.concat([self.upsample43(conv4m_out), conv3_out], -1)
         conv3m_out = self.conv3m(conv4m_out_)
-
+        conv3m_out = self.dropout(conv3m_out)
+        
         conv3m_out_ = tf.concat([self.upsample32(conv3m_out), conv2_out], -1)
         conv2m_out = self.conv2m(conv3m_out_)
+        conv2m_out = self.dropout(conv2m_out)
 
         conv2m_out_ = tf.concat([self.upsample21(conv2m_out), conv1_out], -1)
         conv1m_out = self.conv1m(conv2m_out_)
+        conv1m_out = self.dropout(conv1m_out)
 
         conv0_out = self.conv0(conv1m_out)
 

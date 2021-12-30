@@ -30,8 +30,8 @@ class CustomDataGenerator(Iterator):
                 y_has_mask[i] = 1
 
         outputs = {
-            'output_2': y_has_mask,
-            'output_1': batch_y
+            'output_2': y_has_mask.astype(np.uint8),
+            'output_1': batch_y.astype(np.float32)
         }
 
-        return batch_x, outputs
+        return batch_x.astype(np.float32), outputs
