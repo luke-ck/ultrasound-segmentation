@@ -71,5 +71,5 @@ We found that Squeeze Excite blocks really helped the model to focus and detect 
 
 ## Example of the predicted mask vs true mask
 <p align="center">
-<img src="./figures/predictions/prediction.png" width=1700 height=400>
+<img src="./figures/predictions/prediction.png" width=1700 height=250>
 </p>
