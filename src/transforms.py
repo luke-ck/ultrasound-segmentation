@@ -1,10 +1,8 @@
 import random
-
 import numpy as np
 import torch
 from torchvision import transforms as T
-from torchvision.transforms import functional as F
-from torchvision.transforms.functional import elastic_transform
+from torchvision.transforms.v2 import functional as F
 
 
 def pad_if_smaller(img, size, fill=0):
@@ -37,8 +35,8 @@ class RandomResize:
 
     def __call__(self, image, target):
         size = random.randint(self.min_size, self.max_size)
-        image = F.resize(image, size)
-        target = F.resize(target, size, interpolation=T.InterpolationMode.NEAREST)
+        image = F.resize(image, [size, size])
+        target = F.resize(target, [size, size], interpolation=T.InterpolationMode.NEAREST)
         return image, target
 
 
@@ -144,6 +142,45 @@ class RandomRotation:
 
     def __call__(self, image, target):
         if random.random() < self.p:
-            image = F.rotate(image, self.degrees)
-            target = F.rotate(target, self.degrees)
+            degrees = random.uniform(-self.degrees, self.degrees)
+            image = F.rotate(image, degrees)
+            target = F.rotate(target, degrees)
         return image, target
+
+
+class RandomAffine:
+    def __init__(self, degrees, translate=None, scale=None, shear=None, p=0.5):
+        self.degrees = degrees
+        self.translate = translate
+        self.scale = scale
+        self.shear = shear
+        self.p = p
+
+    def __call__(self, image, target):
+        if random.random() < self.p:
+            scale = 1 - self.scale if random.random() < self.p else 1 + self.scale  # either shrink or enlarge
+            shear_x = self.shear[0] if random.random() < self.p else -self.shear[0]  # either left or right
+            shear_y = self.shear[1] if random.random() < self.p else -self.shear[1]  # either up or down
+            translate_x = self.translate[0] if random.random() < self.p else -self.translate[0]  # either left or right
+            translate_y = self.translate[1] if random.random() < self.p else -self.translate[1]  # either up or down
+            shear = [shear_x, shear_y]
+            translate = [translate_x, translate_y]
+            image = F.affine(image,
+                             angle=self.degrees,
+                             translate=translate,
+                             scale=scale,
+                             shear=shear)
+            target = F.affine(target,
+                              angle=self.degrees,
+                              translate=translate,
+                              scale=scale,
+                              shear=shear)
+        return image, target
+
+
+class Lambda:
+    def __init__(self, lambd):
+        self.lambd = lambd
+
+    def __call__(self, image, target):
+        return image, self.lambd(target)

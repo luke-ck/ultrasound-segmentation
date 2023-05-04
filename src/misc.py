@@ -1,9 +1,8 @@
 import re
-from typing import List, Tuple
-
+from pathlib import Path
+from typing import Tuple, Any
 import matplotlib.pyplot as plt
 import numpy as np
-import torch.nn.functional as F
 import cv2
 import os
 from PIL import Image
@@ -13,15 +12,12 @@ import torch
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 import torch.nn as nn
-
 from src.data_generator import MyDataset
 from src.data_manager import DataManager
-from src.metrics import dice_coeff, iou_coeff, dice_loss
-from pathlib import Path
-from torchvision import transforms
-from src.data_manager import load_img
-from src.transforms import RandomResize, Compose, RandomCrop, RandomHorizontalFlip, Normalize, PILToTensor, \
-    ConvertImageDtype, NumpyToTensor, ColorJitter, RandomRotation
+from src.metrics import dice_coeff, iou_coeff, power_jaccard_loss
+from src.transforms import Compose, Normalize, ConvertImageDtype, NumpyToTensor, RandomRotation, RandomAffine, Lambda, \
+    GaussianBlur
+from src.utils import plot_segmentation_overlay
 
 
 def setup_dirs(path):
@@ -37,15 +33,15 @@ def mask_not_blank(mask):
     return sum(mask.flatten()) > 0
 
 
-def setup_optimization(model, learning_rate=1e-5, weight_decay=1e-8, momentum=0.999):
+def setup_optimization(model, learning_rate=3e-4, weight_decay=1e-8, momentum=0.999, amp=False):
     optimizer = torch.optim.RMSprop(model.parameters(),
                                     lr=learning_rate,
                                     weight_decay=weight_decay,
                                     momentum=momentum,
                                     foreach=True)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)  # goal: maximize Dice score
-    grad_scaler = torch.cuda.amp.GradScaler(enabled=True)
+    grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
     return optimizer, scheduler, grad_scaler
 
 
@@ -151,11 +147,13 @@ def plot_image_with_mask(img, mask, title=None):
 
 
 @torch.inference_mode()
-def evaluate(net, dataloader, device, epoch, amp, BASE, save_fig=False):
+def evaluate(net, dataloader, device, epoch, amp, BASE, threshold=0.8, save_fig=False):
     net.eval()
     num_val_batches = len(dataloader)
     dice_score = 0
     iou_score = 0
+    loss_fn = power_jaccard_loss
+    loss = 0
     if save_fig:
         # save some predictions for visualization
         total_visualised_images = 0
@@ -174,9 +172,11 @@ def evaluate(net, dataloader, device, epoch, amp, BASE, save_fig=False):
             mask_pred = net(image)
 
             assert mask_true.min() >= 0 and mask_true.max() <= 1, 'True mask indices should be in [0, 1]'
-            mask_pred = (F.sigmoid(mask_pred) > 0.5).float()
-            # compute the Dice score
-            dice_score += dice_coeff(mask_pred, mask_true, reduce_batch_first=False)
+            # compute metrics
+            loss += loss_fn(mask_pred, mask_true)
+
+            mask_pred = (mask_pred > threshold).long()
+            dice_score += dice_coeff(mask_pred, mask_true)
             iou_score += iou_coeff(mask_pred, mask_true)
             if save_fig:
                 # find 5 indexes where the mask is not empty and save the image, mask and prediction
@@ -190,33 +190,19 @@ def evaluate(net, dataloader, device, epoch, amp, BASE, save_fig=False):
 
     if save_fig:
         for i, (image, mask_true, mask_pred) in enumerate(visualised_images):
-            plt.figure(figsize=(20, 4))
-            plt.axis('off')
-            plt.subplot(1, 5, 1)
-            plt.imshow(image, cmap='gray')
-            plt.title('Image')
-            plt.subplot(1, 5, 2)
-            plt.imshow(mask_true, cmap='gray')
-            plt.title('True mask')
-            plt.subplot(1, 5, 3)
-            plt.imshow(mask_pred, cmap='gray')
-            plt.title('Predicted mask')
-            plt.subplot(1, 5, 4)
-            plt.imshow(image, cmap='gray')
-            plt.imshow(mask_true, alpha=0.5, cmap='gray')
-            plt.title('True mask overlay')
-            plt.subplot(1, 5, 5)
-            plt.imshow(image, cmap='gray')
-            plt.imshow(mask_pred, alpha=0.5, cmap='gray')
-            plt.title('Predicted mask overlay')
-            # make dir if not exists
-            if not os.path.exists(BASE + '/figures/' + str(epoch)):
-                os.makedirs(BASE + '/figures/' + str(epoch))
-            plt.savefig(BASE + '/figures/' + str(epoch) + '/val_' + str(i) + '.png')
-            plt.close()
+            # if i == 0:
+            #     np.save(BASE + '/data/visualised_images/image_' + str(epoch) + '.npy', image)
+            #     np.save(BASE + '/data/visualised_images/mask_true_' + str(epoch) + '.npy', mask_true)
+            #     np.save(BASE + '/data/visualised_images/mask_pred_' + str(epoch) + '.npy', mask_pred)
+
+            plot_segmentation_overlay(BASE, epoch, i, image, mask_pred, mask_true)
+
+    val_loss = loss / max(num_val_batches, 1)
+    dice_score = dice_score / max(num_val_batches, 1)
+    iou_score = iou_score / max(num_val_batches, 1)
 
     net.train()
-    return dice_score / max(num_val_batches, 1), iou_score / max(num_val_batches, 1)
+    return val_loss.item(), dice_score, iou_score
 
 
 def train_model(model: nn.Module,
@@ -225,19 +211,19 @@ def train_model(model: nn.Module,
                 val_loader: DataLoader,
                 optimizer: torch.optim.Optimizer,
                 scheduler: torch.optim.lr_scheduler.LRScheduler,
-                # class_weights: List,
-                epochs: int, grad_scaler: torch.cuda.amp.GradScaler,
+                grad_scaler: torch.cuda.amp.GradScaler,
+                epochs: int,
                 base_dir: str,
                 checkpoint_path: Path,
-                fine_tune: bool = False) -> Tuple[List[float], List[float], List[float]]:
+                fine_tune: bool = False,
+                amp: bool = False) -> tuple[list[Any], list[Any], list[float], list[float]]:
     # Initialize variables for performance visualization
     train_losses = []
     val_losses = []
     val_ious = []
+    val_dices = []
 
-    # class_weights = torch.tensor(class_weights)
-    criterion = torch.nn.CrossEntropyLoss()
-    loss_fn = dice_loss
+    criterion = power_jaccard_loss
     # Train the model
     for epoch in range(1, epochs + 1):
         # Train for one epoch
@@ -251,33 +237,39 @@ def train_model(model: nn.Module,
                 images = images.to(device='cuda', dtype=torch.float32)
                 true_masks = true_masks.to(device='cuda', dtype=torch.long)
                 assert true_masks.min() >= 0 and true_masks.max() <= 1, 'True mask indices should be in [0, 1]'
-                with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=True):
+                with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     masks_pred = model(images)
-                    loss = criterion(masks_pred.squeeze(1), true_masks.squeeze(1).float())
-                    loss += loss_fn(F.sigmoid(masks_pred.squeeze(1)), true_masks.squeeze(1).float())
+                    loss = criterion(masks_pred, true_masks)
 
                 optimizer.zero_grad(set_to_none=True)
                 grad_scaler.scale(loss).backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                grad_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
                 grad_scaler.step(optimizer)
                 grad_scaler.update()
+                # loss.backward()
+                # optimizer.step()
 
                 pbar.update(images.shape[0])
                 epoch_loss += loss.item()
                 pbar.set_postfix(**{'loss (batch)': loss.item()})
 
-            if epoch % 3 == 0:
+            if epoch % 1 == 0:
                 # Evaluate on validation set
-                val_dice, val_iou = evaluate(model, val_loader, epoch=epoch, device=device, amp=True, BASE=base_dir,
-                                             save_fig=True)
+                val_loss, val_dice, val_iou = evaluate(model, val_loader, epoch=epoch, device=device, amp=amp,
+                                                       BASE=base_dir,
+                                                       save_fig=True)
             else:
-                val_dice, val_iou = evaluate(model, val_loader, epoch=epoch, device=device, amp=True, BASE=base_dir)
+                val_loss, val_dice, val_iou = evaluate(model, val_loader, epoch=epoch, device=device, amp=amp,
+                                                       BASE=base_dir)
+
             scheduler.step(val_dice)
 
             # Update variables for performance visualization
             train_losses.append(loss.item())
-            val_losses.append(val_dice.cpu().numpy())
-            val_ious.append(val_iou)
+            val_losses.append(val_loss)
+            val_dices.append(val_dice.cpu().numpy())
+            val_ious.append(val_iou.cpu().numpy())
 
         # Save model checkpoint
         if not fine_tune:
@@ -285,7 +277,7 @@ def train_model(model: nn.Module,
             state_dict = model.state_dict()
             torch.save(state_dict, str(checkpoint_path / 'checkpoint_epoch{}.pth'.format(epoch)))
         else:
-            if epoch % 3 == 0:
+            if epoch % 1 == 0:
                 Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
                 state_dict = model.state_dict()
                 torch.save(state_dict, str(checkpoint_path / 'fine_tune_checkpoint_epoch{}.pth'.format(epoch)))
@@ -296,8 +288,9 @@ def train_model(model: nn.Module,
         # if epoch > 0 and epoch % 10 == 0:
         #     for g in optimizer.param_groups:
         #         g['lr'] /= 10
+        pbar.update({'loss (epoch)': epoch_loss / len(train_loader)})
 
-    return train_losses, val_losses, val_ious
+    return train_losses, val_losses, val_dices, val_ious
 
 
 def get_transformed_dataset(manager: DataManager,
@@ -313,20 +306,20 @@ def get_transformed_dataset(manager: DataManager,
     train_transforms = Compose([
         NumpyToTensor(),
         ConvertImageDtype(torch.float32),
-        RandomResize(256),
-        RandomCrop(224),
-        RandomHorizontalFlip(0.3),
-        RandomRotation(15),
-        ColorJitter(0.7, 1, 0.8, -0.5),
+        RandomRotation(60),
+        RandomAffine(degrees=0, translate=[0.2, 0.2], shear=[0.2, 0.2], scale=0.2),
+        GaussianBlur(kernel_size=[3, 3], sigma=[1.0, 1.0]),
+        Lambda(lambda x: torch.where(x > 0, 1, 0)),
         Normalize(train_mean, train_std),
-        # ElasticTransform(alpha=5.0, sigma=5.0, p=0.3),  # TODO
     ])
 
     val_transforms = Compose([
         NumpyToTensor(),
         ConvertImageDtype(torch.float32),
-        RandomResize(256),
-        RandomCrop(224),
+        RandomRotation(60),
+        RandomAffine(degrees=0, translate=[0.2, 0.2], shear=[0.2, 0.2], scale=0.2),
+        GaussianBlur(kernel_size=[3, 3], sigma=[1.0, 1.0]),
+        Lambda(lambda x: torch.where(x > 0, 1, 0)),
         Normalize(train_mean, train_std)
     ])
 
@@ -347,10 +340,3 @@ def get_transformed_dataset(manager: DataManager,
                             shuffle=False,
                             pin_memory=True)
     return train_loader, val_loader
-
-
-def ratio_between_images(path):
-    image = load_img(path)
-    image = np.where(image > 0, 1, 0)
-    _, counts = np.unique(image, return_counts=True)
-    return (counts[1] / (image.shape[0] * image.shape[1])), (counts[0] / (image.shape[0] * image.shape[1]))
