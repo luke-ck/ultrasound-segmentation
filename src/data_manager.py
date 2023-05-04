@@ -213,8 +213,8 @@ class DataManager(object):
         print('Saving {} .npy files done.'.format(name_prefix))
         return test_data
 
-    def train_val_split(self, amateur_total_frames: int, amateur_train_data: list, split_ratio=0.8) -> (
-            list, list, list, list):
+    def train_val_split(self, amateur_total_frames: int, amateur_train_data: list, split_ratio=0.8) -> Tuple[
+            list, list, list, list]:
         """
         This function splits the amateur data into train and validation sets. It does so by greedily splitting the
         frames into train and validation going through each patient until the split ratio is reached. If the cumulative
