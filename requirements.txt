@@ -20,7 +20,7 @@ defusedxml==0.7.1
 executing==1.2.0
 fastjsonschema==2.16.3
 filelock==3.11.0
-fonttools==4.39.3
+fonttools==4.43.0
 fqdn==1.5.1
 idna==3.4
 ignite==1.1.0
